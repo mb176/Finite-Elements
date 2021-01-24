@@ -43,8 +43,8 @@ class QuadratureRule(object):
         The implementation of this method is left as an :ref:`exercise
         <ex-integrate>`.
         """
+        return np.dot(np.array([function(point) for point in self.points]),self.weights)
 
-        raise NotImplementedError
 
 
 def gauss_quadrature(cell, degree):

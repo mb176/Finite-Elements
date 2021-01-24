@@ -4,8 +4,6 @@ import numpy as np
 from .reference_elements import ReferenceInterval, ReferenceTriangle
 np.seterr(invalid='ignore', divide='ignore')
 
-#Hello world
-
 def lagrange_points(cell, degree):
     """Construct the locations of the equispaced Lagrange nodes on cell.
 
@@ -21,7 +19,6 @@ def lagrange_points(cell, degree):
     """
 
     raise NotImplementedError
-
 
 def vandermonde_matrix(cell, degree, points, grad=False):
     """Construct the generalised Vandermonde matrix for polynomials of the
