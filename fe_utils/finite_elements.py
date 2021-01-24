@@ -4,6 +4,7 @@ import numpy as np
 from .reference_elements import ReferenceInterval, ReferenceTriangle
 np.seterr(invalid='ignore', divide='ignore')
 
+#Hello world
 
 def lagrange_points(cell, degree):
     """Construct the locations of the equispaced Lagrange nodes on cell.
