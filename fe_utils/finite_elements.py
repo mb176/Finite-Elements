@@ -17,8 +17,19 @@ def lagrange_points(cell, degree):
     <ex-lagrange-points>`.
 
     """
-
-    raise NotImplementedError
+    nodes = []
+    # 1D case
+    if cell.dim==1:  
+        for idx in range(degree+1):
+            nodes.append(cell.vertices[0]+idx/degree*(cell.vertices[1]-cell.vertices[0]))
+    # 2D case, assumes a triangle spanned by 3 vertices
+    elif cell.dim==2: 
+        for i in range(degree+1): #index running along first triangle side
+            for j in range(degree+1-i): #index running along second triangle side
+                nodes.append(cell.vertices[0]+i/degree*(cell.vertices[1]-cell.vertices[0])
+                             +j/degree*(cell.vertices[2]-cell.vertices[0]))
+    return np.array(nodes)
+    
 
 def vandermonde_matrix(cell, degree, points, grad=False):
     """Construct the generalised Vandermonde matrix for polynomials of the
@@ -34,8 +45,26 @@ def vandermonde_matrix(cell, degree, points, grad=False):
     The implementation of this function is left as an :ref:`exercise
     <ex-vandermonde>`.
     """
+    # Set first row of vandermonde matrix (always one)
+    vandermonde = [np.ones(np.size(points,axis=0))]
+    #1D case
+    if cell.name=='ReferenceInterval':
+        x0 = np.array(points[:,0])
+        #Loop over every column of the matrix
+        for order in range(1,degree+1):
+            vandermonde.append(x0**order)
+    #2D casepyh
+    elif cell.name=='ReferenceTriangle':
+        x0 = np.array(points[:,0])
+        y0 = np.array(points[:,1])
+        for order in range(1,degree+1):
+            for yPower in range(order+1):
+                vandermonde.append(x0**(order-yPower) * y0**yPower)
+    else:
+        raise Exception("Unknown cell type")
 
-    raise NotImplementedError
+    return np.transpose(np.array(vandermonde))
+
 
 
 class FiniteElement(object):
@@ -74,10 +103,9 @@ class FiniteElement(object):
             self.nodes_per_entity = np.array([len(entity_nodes[d][0])
                                               for d in range(cell.dim+1)])
 
-        # Replace this exception with some code which sets
-        # self.basis_coefs
-        # to an array of polynomial coefficients defining the basis functions.
-        raise NotImplementedError
+        # A matrix cof oefficients for the polynomials spanning the nodal basis 
+        # corresponding to nodes
+        self.basis_coefs = np.linalg.inv(vandermonde_matrix(cell, degree, nodes))
 
         #: The number of nodes in this element.
         self.node_count = nodes.shape[0]
@@ -96,14 +124,13 @@ class FiniteElement(object):
             each basis vector at each point is returned as a rank 3
             array. The shape of the array is (points, nodes) if
             ``grad`` is ``False`` and (points, nodes, dim) if ``grad``
-            is ``True``.
+            is ``True``."""
 
-        The implementation of this method is left as an :ref:`exercise
-        <ex-tabulate>`.
+        #Calculate the result by using the vandermonde matrix of points and 
+        #multiplying by basis coefficients
+        table = np.dot(vandermonde_matrix(self.cell, self.degree, points),self.basis_coefs)
+        return table
 
-        """
-
-        raise NotImplementedError
 
     def interpolate(self, fn):
         """Interpolate fn onto this finite element by evaluating it
@@ -141,8 +168,7 @@ class LagrangeElement(FiniteElement):
         The implementation of this class is left as an :ref:`exercise
         <ex-lagrange-element>`.
         """
-
-        raise NotImplementedError
+        nodes = lagrange_points(cell, degree)
         # Use lagrange_points to obtain the set of nodes.  Once you
         # have obtained nodes, the following line will call the
         # __init__ method on the FiniteElement class to set up the
