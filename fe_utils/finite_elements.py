@@ -1,6 +1,7 @@
 # Cause division to always mean floating point division.
 from __future__ import division
 import numpy as np
+import copy
 from .reference_elements import ReferenceInterval, ReferenceTriangle
 np.seterr(invalid='ignore', divide='ignore')
 
@@ -22,12 +23,19 @@ def lagrange_points(cell, degree):
     if cell.dim==1:  
         for idx in range(degree+1):
             nodes.append(cell.vertices[0]+idx/degree*(cell.vertices[1]-cell.vertices[0]))
+
     # 2D case, assumes a triangle spanned by 3 vertices
     elif cell.dim==2: 
+        origin = cell.vertices[0]
+        edge1 = cell.vertices[1]-cell.vertices[0]
+        edge2 = cell.vertices[2]-cell.vertices[0]
+        '''The triangle is spanned by edge1 and edge2 originating at origin. Their choice 
+        matches the Referencetriangle.topology in such a way that LagrangePoints can 
+        easily create entity_nodes in the right order.
+        '''
         for i in range(degree+1): #index running along first triangle side
             for j in range(degree+1-i): #index running along second triangle side
-                nodes.append(cell.vertices[0]+i/degree*(cell.vertices[1]-cell.vertices[0])
-                             +j/degree*(cell.vertices[2]-cell.vertices[0]))
+                nodes.append(origin + j/degree*edge1 + i/degree*edge2)
     return np.array(nodes)
     
 
@@ -40,30 +48,52 @@ def vandermonde_matrix(cell, degree, points, grad=False):
     :param points: a list of coordinate tuples corresponding to the points.
     :param grad: whether to evaluate the Vandermonde matrix or its gradient.
 
-    :returns: the generalised :ref:`Vandermonde matrix <sec-vandermonde>`
+    :returns: the generalised :ref:`Vandermonde matrix <sec-vandermonde>` 
+        of the form:
+        grad = False: vandermonde[point, monomial]
+        grad = True:  vandermonde[point, monomial, coordinate]   
 
     The implementation of this function is left as an :ref:`exercise
     <ex-vandermonde>`.
     """
-    # Set first row of vandermonde matrix (always one)
-    vandermonde = [np.ones(np.size(points,axis=0))]
+    
+    vandermonde = []
     #1D case
-    if cell.name=='ReferenceInterval':
-        x0 = np.array(points[:,0])
-        #Loop over every column of the matrix
-        for order in range(1,degree+1):
-            vandermonde.append(x0**order)
-    #2D casepyh
-    elif cell.name=='ReferenceTriangle':
-        x0 = np.array(points[:,0])
-        y0 = np.array(points[:,1])
-        for order in range(1,degree+1):
-            for yPower in range(order+1):
-                vandermonde.append(x0**(order-yPower) * y0**yPower)
-    else:
-        raise Exception("Unknown cell type")
+    if cell.name=='`ReferenceInterval`':
+        x0 = np.array(points[:,0],dtype=float)
 
-    return np.transpose(np.array(vandermonde))
+        #Loop over every column of the matrix
+        for order in range(0,degree+1):
+            #Append basis function/ gradient at the points
+            if grad==False:
+                vandermonde.append(x0**order)
+            elif grad == True:
+                vandermonde.append(np.nan_to_num(np.array([order*x0**(order-1)]).transpose()))
+                
+    #2D case
+    elif cell.name=='ReferenceTriangle':
+        x0 = np.array(points[:,0],dtype=float)
+        y0 = np.array(points[:,1],dtype=float)
+
+        #Loop over every column of the matrix
+        for order in range(0,degree+1):
+            for yPower in range(order+1):
+                #Append basis function/ gradient at the points
+                if grad==False:
+                    vandermonde.append(x0**(order-yPower) * y0**yPower)
+                elif grad == True:
+                    xDerivative = np.nan_to_num((order-yPower)*x0**(order-yPower-1) * y0**yPower)
+                    yDerivative = np.nan_to_num(x0**(order-yPower) * yPower *y0**(yPower-1))
+                    vandermonde.append(np.array([xDerivative,yDerivative]).transpose())
+                    
+
+    else:
+        raise Exception("Unknown cell type: %s"%cell.name)
+    
+    if grad==False:
+        return np.array(vandermonde).transpose(1,0) 
+    elif grad ==True:
+        return np.array(vandermonde).transpose(1,0,2) 
 
 
 
@@ -75,7 +105,8 @@ class FiniteElement(object):
             over which the element is defined.
         :param degree: the
             polynomial degree of the element. We assume the element
-            spans the complete polynomial space.
+            spans the com
+            ete polynomial space.
         :param nodes: a list of coordinate tuples corresponding to
             the nodes of the element.
         :param entity_nodes: a dictionary of dictionaries such that
@@ -126,9 +157,13 @@ class FiniteElement(object):
             ``grad`` is ``False`` and (points, nodes, dim) if ``grad``
             is ``True``."""
 
-        #Calculate the result by using the vandermonde matrix of points and 
+        #Calculate tabulation table by using the vandermonde matrix of points and 
         #multiplying by basis coefficients
-        table = np.dot(vandermonde_matrix(self.cell, self.degree, points),self.basis_coefs)
+        if grad == False: #Tabulate points
+            table = np.dot(vandermonde_matrix(self.cell, self.degree, points),self.basis_coefs)
+        elif grad == True: #Tabulate gradients
+            table = np.einsum('ijk,jl->ilk', vandermonde_matrix(self.cell,self.degree,points,grad=True), 
+                                self.basis_coefs)
         return table
 
 
@@ -142,12 +177,8 @@ class FiniteElement(object):
         :returns: A vector containing the value of ``fn`` at each node
            of this element.
 
-        The implementation of this method is left as an :ref:`exercise
-        <ex-interpolate>`.
-
         """
-
-        raise NotImplementedError
+        return np.array(list(map(fn,self.nodes)))
 
     def __repr__(self):
         return "%s(%s, %s)" % (self.__class__.__name__,
@@ -173,4 +204,29 @@ class LagrangeElement(FiniteElement):
         # have obtained nodes, the following line will call the
         # __init__ method on the FiniteElement class to set up the
         # basis coefficients.
-        super(LagrangeElement, self).__init__(cell, degree, nodes)
+
+        '''Construct the entity_nodes dictionary
+        :nodes_entity[d][n] returns all nodes contained in the entity denoted 
+        by the tuple (d,n)
+        '''
+        entity_nodes = copy.deepcopy(cell.topology)
+        #Start with the topology dictionary, then overwrite the vertices with nodes
+
+        nodeUsed = np.zeros(len(nodes)) 
+        #Flag array for the nodes, 0 if the node is associated to no entity yet
+
+        #Loop over all entities:
+        for dim in cell.topology:
+            for entityIdx in cell.topology[dim]:
+                #Test for each node if it is unused and part of the entity:
+                entity_nodes[dim][entityIdx]=[]
+                for nodeIdx in range(len(nodes)):
+                    if (nodeUsed[nodeIdx]==False and 
+                        cell.point_in_entity(nodes[nodeIdx],[dim,entityIdx])):
+
+                        #If true, append the node to the entity_node list 
+                        entity_nodes[dim][entityIdx].append(nodeIdx)
+                        nodeUsed[nodeIdx]=True
+
+                
+        super(LagrangeElement, self).__init__(cell, degree, nodes, entity_nodes=entity_nodes)

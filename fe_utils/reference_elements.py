@@ -57,7 +57,7 @@ ReferenceInterval = ReferenceCell(vertices=[[0.], [1.]],
                                   topology={0: {0: [0],
                                                 1: [1]},
                                             1: {0: [0, 1]}},
-                                  name="ReferenceInterval")
+                                  name="`ReferenceInterval`")
 
 #: A :class:`ReferenceCell` storing the geometry and topology of the triangle
 #: with vertices [[0., 0.], [1., 0.], [0., 1.]].
